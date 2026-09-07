@@ -453,8 +453,8 @@
 
   // per-hand pinch/draw state, keyed by handedness label
   const handState = {
-    Left: { pinching: false, lastX: null, lastY: null },
-    Right: { pinching: false, lastX: null, lastY: null }
+    Left: { pinching: false, pinchFrames: 0, releaseFrames: 0, lastX: null, lastY: null, smoothX: null, smoothY: null },
+    Right: { pinching: false, pinchFrames: 0, releaseFrames: 0, lastX: null, lastY: null, smoothX: null, smoothY: null }
   };
 
   // ---------- toolbar setup ----------
@@ -587,21 +587,35 @@
     const pinchRatio = dist2D(thumbTip, indexTip) / handSize;
 
     const state = handState[label];
-    const pinchOnThresh = 0.45;
-    const pinchOffThresh = 0.65;
+    const pinchOnThresh = 0.55;
+    const pinchOffThresh = 0.75;
 
-    if (!state.pinching && pinchRatio < pinchOnThresh) {
-      state.pinching = true;
-      state.lastX = null;
-      state.lastY = null;
-    } else if (state.pinching && pinchRatio > pinchOffThresh) {
-      state.pinching = false;
-      state.lastX = null;
-      state.lastY = null;
+    if (!state.pinching) {
+      state.pinchFrames = pinchRatio < pinchOnThresh ? state.pinchFrames + 1 : 0;
+      if (state.pinchFrames >= 2) {
+        state.pinching = true;
+        state.releaseFrames = 0;
+        state.lastX = null;
+        state.lastY = null;
+      }
+    } else {
+      state.releaseFrames = pinchRatio > pinchOffThresh ? state.releaseFrames + 1 : 0;
+      if (state.releaseFrames >= 2) {
+        state.pinching = false;
+        state.pinchFrames = 0;
+        state.lastX = null;
+        state.lastY = null;
+      }
     }
 
-    const x = indexTip.x * w;
-    const y = indexTip.y * h;
+    // The pinch midpoint is steadier than either fingertip while drawing.
+    const targetX = ((thumbTip.x + indexTip.x) / 2) * w;
+    const targetY = ((thumbTip.y + indexTip.y) / 2) * h;
+    const smoothing = state.pinching ? 0.58 : 0.72;
+    state.smoothX = state.smoothX === null ? targetX : state.smoothX + (targetX - state.smoothX) * smoothing;
+    state.smoothY = state.smoothY === null ? targetY : state.smoothY + (targetY - state.smoothY) * smoothing;
+    const x = state.smoothX;
+    const y = state.smoothY;
 
     if (state.pinching) {
       drawCtx.lineJoin = 'round';
@@ -653,8 +667,12 @@
     ['Left', 'Right'].forEach(label => {
       if (!seenLabels.has(label)) {
         handState[label].pinching = false;
+        handState[label].pinchFrames = 0;
+        handState[label].releaseFrames = 0;
         handState[label].lastX = null;
         handState[label].lastY = null;
+        handState[label].smoothX = null;
+        handState[label].smoothY = null;
       }
     });
 
